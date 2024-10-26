@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D3.js Force-Directed Graph - Dark Mode</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212; /* Dunkler Hintergrund */
+            color: #ffffff; /* Helle Schriftfarbe */
+            overflow: hidden; /* Versteckt Scrollbalken */
+        }
+
+        .node {
+            cursor: pointer;
+        }
+
+        .node circle {
+            fill: #1db954; /* Helles Grün für Nodes */
+            stroke: #ffffff; /* Weiße Umrandung */
+            stroke-width: 2px;
+        }
+
+        .node text {
+            font: 12px sans-serif;
+            fill: #ffffff; /* Weiße Schriftfarbe */
+        }
+
+        .link {
+            fill: none;
+            stroke: #444444; /* Dunkles Grau für Links */
+            stroke-opacity: 0.8;
+            transition: stroke-width 0.2s; /* Animation für die Änderung der Linienstärke */
+        }
+
+        .link.selected {
+            stroke-width: 4px; /* Dickere Linie für ausgewählte Verbindungen */
+            stroke: #ff4081; /* Rosa für ausgewählte Verbindungen */
+        }
+
+        #info {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9); /* Leicht transparenter Hintergrund */
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            display: none;
+            pointer-events: none; /* Verhindert, dass das Info-Fenster Klicks blockiert */
+            color: #333; /* Dunklere Schriftfarbe für Lesbarkeit */
+        }
+    </style>
+</head>
+<body>
+    <div id="info"></div>
+    <svg></svg>
+
+    <script>
+        // Dynamische Größe für SVG
+        const svg = d3.select("svg")
+            .attr("width", window.innerWidth)
+            .attr("height", window.innerHeight);
+
+        // Hinzufügen der Zoom-Funktionalität
+        const g = svg.append("g");
+
+        // Führe den Fetch-Request aus, um kombinierte Daten zu erhalten
+        fetch('http://localhost:8080/nodes')
+            .then(response => response.json())
+            .then(data => {
+                const nodes = data.nodes;
+                const links = data.edges.map(edge => ({
+                    source: edge.source_id,
+                    target: edge.target_id
+                }));
+
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+
+                // Simulation initialisieren
+                const simulation = d3.forceSimulation(nodes)
+                    .force("link", d3.forceLink().id(d => d.id).distance(150)) // Abstand zwischen den Nodes erhöhen
+                    .force("charge", d3.forceManyBody().strength(-200)) // Stärke der Abstoßung erhöhen
+                    .force("center", d3.forceCenter(width / 2, height / 2));
+
+                simulation.force("link").links(links);
+
+                const link = g.append("g")
+                    .attr("class", "links")
+                    .selectAll("line")
+                    .data(links)
+                    .enter().append("line")
+                    .attr("class", "link");
+
+                const node = g.append("g")
+                    .attr("class", "nodes")
+                    .selectAll("g")
+                    .data(nodes)
+                    .enter().append("g")
+                    .attr("class", "node")
+                    .on("click", (event, d) => {
+                        showInfo(event, d);
+                        highlightLinks(d); // Hervorhebung der Links auf Klick
+                    });
+
+                node.append("circle")
+                    .attr("r", 6); // Vergrößern Sie den Node-Durchmesser
+
+                node.append("text")
+                    .attr("dy", -3)
+                    .attr("x", 8) // Leicht nach rechts verschoben
+                    .text(d => d.title);
+
+                function ticked() {
+                    link
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+
+                    node
+                        .attr("transform", d => `translate(${d.x}, ${d.y})`);
+                }
+
+                simulation.on("tick", ticked);
+                simulation.alpha(1).restart();
+
+                function showInfo(event, d) {
+                    const info = d3.select("#info");
+                    info.style("display", "block")
+                        .style("left", `${event.pageX + 10}px`)
+                        .style("top", `${event.pageY}px`)
+                        .html(`<strong>${d.title}</strong><br>${d.content}`);
+                }
+
+                function highlightLinks(node) {
+                    // Setze alle Links zurück
+                    d3.selectAll(".link").classed("selected", false);
+
+                    // Hebe die Links hervor
+                    d3.selectAll(".link")
+                        .filter(l => l.source.id === node.id || l.target.id === node.id)
+                        .classed("selected", true); // Hebt die Links hervor
+                }
+
+                // Schließe das Info-Fenster beim Klicken außerhalb
+                d3.select("body").on("click", (event) => {
+                    if (!event.target.closest(".node")) {
+                        d3.select("#info").style("display", "none");
+                        d3.selectAll(".link").classed("selected", false); // Alle Verbindungen zurücksetzen
+                    }
+                });
+
+                // Zoom-Funktion hinzufügen
+                const zoom = d3.zoom()
+                    .scaleExtent([0.1, 3]) // Minimum und Maximum für den Zoom
+                    .on("zoom", (event) => {
+                        g.attr("transform", event.transform);
+                    });
+
+                svg.call(zoom);
+
+                // Eventlistener für Fenstergröße
+                window.addEventListener('resize', () => {
+                    svg.attr("width", window.innerWidth)
+                        .attr("height", window.innerHeight);
+                    simulation.force("center", d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2)).alpha(1).restart();
+                });
+            })
+            .catch(error => console.error('Fehler beim Abrufen der Daten:', error));
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,51 @@
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build directories
+bin/
+obj/
+
+# Go workspace files
+# Uncomment if you're using modules
+# vendor/
+
+# Go modules cache
+.go/
+
+# IDE-specific files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode specific files
+.vscode/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Test output
+*.test
+
+# Coverage files
+*.out
+*.cover
+*.cov
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# Logs
+*.log

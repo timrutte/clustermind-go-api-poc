@@ -268,6 +268,52 @@ resource "aws_apigatewayv2_route" "lambda_route" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
+# Lambda Integration für POST /nodes
+resource "aws_apigatewayv2_integration" "post_nodes_integration" {
+  api_id             = aws_apigatewayv2_api.go_api.id
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.go_api_lambda.invoke_arn
+  integration_method = "POST"
+}
+
+# Route für POST /nodes
+resource "aws_apigatewayv2_route" "post_nodes_route" {
+  api_id    = aws_apigatewayv2_api.go_api.id
+  route_key = "POST /nodes"
+  target    = "integrations/${aws_apigatewayv2_integration.post_nodes_integration.id}"
+}
+
+# Lambda Integration für GET /nodes
+resource "aws_apigatewayv2_integration" "get_nodes_integration" {
+  api_id             = aws_apigatewayv2_api.go_api.id
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.go_api_lambda.invoke_arn
+  integration_method = "POST"
+}
+
+# Route für GET /nodes
+resource "aws_apigatewayv2_route" "get_nodes_route" {
+  api_id    = aws_apigatewayv2_api.go_api.id
+  route_key = "GET /nodes"
+  target    = "integrations/${aws_apigatewayv2_integration.get_nodes_integration.id}"
+}
+
+# Lambda Integration für GET /health
+resource "aws_apigatewayv2_integration" "health_integration" {
+  api_id             = aws_apigatewayv2_api.go_api.id
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.go_api_lambda.invoke_arn
+  integration_method = "POST"
+}
+
+# Route für GET /health
+resource "aws_apigatewayv2_route" "health_route" {
+  api_id    = aws_apigatewayv2_api.go_api.id
+  route_key = "GET /health"
+  target    = "integrations/${aws_apigatewayv2_integration.health_integration.id}"
+}
+
+# Stage für das API Gateway
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.go_api.id
   name        = "$default"

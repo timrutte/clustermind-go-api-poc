@@ -147,6 +147,8 @@ func InitDB() {
 }
 
 func main() {
+	log.Println("Starting the application...")
+
 	InitDB()
 	defer db.Close()
 
@@ -160,7 +162,7 @@ func main() {
 		case request.HTTPMethod == http.MethodGet && request.Path == "/health":
 			return healthHandler(ctx, request)
 		default:
-			return events.APIGatewayProxyResponse{StatusCode: http.StatusNotFound, Body: "Not found!"}, nil
+			return events.APIGatewayProxyResponse{StatusCode: http.StatusNotFound, Body: "Not found!!!"}, nil
 		}
 	})
 }

@@ -50,7 +50,7 @@ Thumbs.db
 # Logs
 *.log
 
-build/clustermind
+build/bootstrap
 build/clustermind.zip
 
 # Terraform

@@ -4,7 +4,10 @@ provider "aws" {
 }
 
 locals {
-  app_name = "clustermind"
+  app_name     = "clustermind"
+  binary_path  = "../../build/bootstrap"
+  src_path     = "../../main.go"
+  archive_path = "../../build/clustermind.zip"
 }
 
 resource "aws_vpc" "main" {
@@ -67,12 +70,14 @@ resource "aws_route_table_association" "subnet2_assoc" {
 resource "null_resource" "build_go" {
   provisioner "local-exec" {
     command = <<EOT
-      GOOS=linux GOARCH=amd64 go build -o ../../build/clustermind ../../main.go
-      cd ../../build && zip clustermind.zip clustermind
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOFLAGS=-trimpath go build -mod=readonly -ldflags='-s -w' -o ${local.binary_path} ${local.src_path}
+    chmod +x ${local.binary_path}
+    zip ${local.archive_path} ${local.binary_path}
     EOT
   }
+
   triggers = {
-    go_file = filemd5("../../main.go")
+    always_run = timestamp()
   }
 }
 
@@ -98,8 +103,8 @@ resource "aws_iam_policy_attachment" "lambda_logging" {
 }
 
 resource "aws_iam_role_policy" "lambda_ec2_permissions" {
-  name   = "${local.app_name}-lambda-ec2-permissions"
-  role   = aws_iam_role.lambda_role.id
+  name = "${local.app_name}-lambda-ec2-permissions"
+  role = aws_iam_role.lambda_role.id
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -117,8 +122,8 @@ resource "aws_iam_role_policy" "lambda_ec2_permissions" {
 }
 
 resource "aws_iam_role_policy" "lambda_cloudwatch_policy" {
-  name   = "lambda_cloudwatch_policy"
-  role   = aws_iam_role.lambda_role.id
+  name = "lambda_cloudwatch_policy"
+  role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -134,6 +139,11 @@ resource "aws_iam_role_policy" "lambda_cloudwatch_policy" {
       }
     ]
   })
+}
+
+resource "aws_cloudwatch_log_group" "log_group" {
+  name              = "/aws/lambda/${aws_lambda_function.go_api_lambda.function_name}"
+  retention_in_days = 7
 }
 
 resource "random_password" "db_password" {
@@ -155,7 +165,7 @@ resource "aws_secretsmanager_secret_version" "db_secret_version" {
 resource "aws_security_group" "lambda_rds_sg" {
   vpc_id = aws_vpc.main.id
   tags = {
-    Name = "lambda-rds-sg"
+    Name = "${local.app_name}-lambda-rds-sg"
   }
 }
 
@@ -164,13 +174,13 @@ resource "aws_db_instance" "default" {
   engine                 = "mysql"
   engine_version         = "8.0"
   instance_class         = "db.t3.micro"
-  username               = "clustermind"
+  username               = local.app_name
   password               = jsondecode(aws_secretsmanager_secret_version.db_secret_version.secret_string)["password"]
   db_subnet_group_name   = aws_db_subnet_group.default.name
   vpc_security_group_ids = [aws_security_group.lambda_rds_sg.id]
   skip_final_snapshot    = true
   publicly_accessible    = true
-  db_name                = "clustermind"
+  db_name                = local.app_name
   identifier             = "${local.app_name}-db"
 }
 
@@ -199,20 +209,12 @@ resource "aws_db_subnet_group" "default" {
   }
 }
 
-resource "aws_db_subnet_group" "main" {
-  name       = "${local.app_name}-db-subnet-group"
-  subnet_ids = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
-  tags = {
-    Name = "db-subnet-group"
-  }
-}
-
 resource "aws_lambda_function" "go_api_lambda" {
-  filename      = "../../build/clustermind.zip"
-  function_name = "${local.app_name}-go-api"
-  role          = aws_iam_role.lambda_role.arn
-  handler       = "clustermind"
-  runtime       = "provided.al2"
+  filename         = local.archive_path
+  function_name    = "${local.app_name}-go-api"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = local.app_name
+  runtime          = "provided.al2"
   vpc_config {
     security_group_ids = [aws_security_group.lambda_rds_sg.id]
     subnet_ids         = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]

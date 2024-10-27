@@ -1,3 +1,19 @@
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+    }
+    archive = {
+      source = "hashicorp/archive"
+    }
+    null = {
+      source = "hashicorp/null"
+    }
+  }
+
+  required_version = ">= 1.3.7"
+}
+
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
@@ -72,13 +88,20 @@ resource "null_resource" "build_go" {
     command = <<EOT
     GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOFLAGS=-trimpath go build -mod=readonly -ldflags='-s -w' -o ${local.binary_path} ${local.src_path}
     chmod +x ${local.binary_path}
-    zip ${local.archive_path} ${local.binary_path}
     EOT
   }
 
   triggers = {
     always_run = timestamp()
   }
+}
+
+data "archive_file" "function_archive" {
+  depends_on = [null_resource.build_go]
+
+  type        = "zip"
+  source_file = local.binary_path
+  output_path = local.archive_path
 }
 
 resource "aws_iam_role" "lambda_role" {
@@ -162,13 +185,6 @@ resource "aws_secretsmanager_secret_version" "db_secret_version" {
   })
 }
 
-resource "aws_security_group" "lambda_rds_sg" {
-  vpc_id = aws_vpc.main.id
-  tags = {
-    Name = "${local.app_name}-lambda-rds-sg"
-  }
-}
-
 resource "aws_db_instance" "default" {
   allocated_storage      = 20
   engine                 = "mysql"
@@ -177,7 +193,7 @@ resource "aws_db_instance" "default" {
   username               = local.app_name
   password               = jsondecode(aws_secretsmanager_secret_version.db_secret_version.secret_string)["password"]
   db_subnet_group_name   = aws_db_subnet_group.default.name
-  vpc_security_group_ids = [aws_security_group.lambda_rds_sg.id]
+  vpc_security_group_ids = [aws_security_group.default.id]
   skip_final_snapshot    = true
   publicly_accessible    = true
   db_name                = local.app_name
@@ -185,7 +201,8 @@ resource "aws_db_instance" "default" {
 }
 
 resource "aws_security_group" "default" {
-  name        = "${local.app_name}-rds-sg"
+  vpc_id      = aws_vpc.main.id
+  name        = "${local.app_name}-sg"
   description = "Allow access to the RDS MySQL instance"
   ingress {
     from_port   = 3306
@@ -211,13 +228,25 @@ resource "aws_db_subnet_group" "default" {
 
 resource "aws_lambda_function" "go_api_lambda" {
   filename         = local.archive_path
+  source_code_hash = data.archive_file.function_archive.output_base64sha256
   function_name    = "${local.app_name}-go-api"
   role             = aws_iam_role.lambda_role.arn
   handler          = local.app_name
   runtime          = "provided.al2"
+
   vpc_config {
-    security_group_ids = [aws_security_group.lambda_rds_sg.id]
+    security_group_ids = [aws_security_group.default.id]
     subnet_ids         = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
+  }
+
+  environment {
+    variables = {
+      DB_HOST     = aws_db_instance.default.address
+      DB_PORT     = aws_db_instance.default.port
+      DB_USER     = local.app_name
+      DB_PASSWORD = jsondecode(aws_secretsmanager_secret_version.db_secret_version.secret_string)["password"]
+      DB_NAME     = local.app_name
+    }
   }
 }
 

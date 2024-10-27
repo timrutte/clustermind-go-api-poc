@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -72,6 +73,7 @@ func createNodeHandler(ctx context.Context, request events.APIGatewayProxyReques
 	return events.APIGatewayProxyResponse{StatusCode: http.StatusCreated, Body: string(response)}, nil
 }
 
+// Handler for retrieving all nodes and edges
 func getNodesHandler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	rows, err := db.Query("SELECT id, title, content FROM nodes")
 	if err != nil {
@@ -116,14 +118,22 @@ func getNodesHandler(ctx context.Context, request events.APIGatewayProxyRequest)
 	return events.APIGatewayProxyResponse{StatusCode: http.StatusOK, Body: string(response)}, nil
 }
 
+// Health check handler
+func healthHandler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Body:       `{"status":"ok"}`,
+	}, nil
+}
+
 func InitDB() {
 	var err error
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
-		"root",     // MYSQL_USER
-		"password", // MYSQL_PASSWORD
-		"db",       // MYSQL_HOST
-		"3306",     // MYSQL_PORT
-		"nodes_db", // MYSQL_DB
+		os.Getenv("MYSQL_USER"),
+		os.Getenv("MYSQL_PASSWORD"),
+		os.Getenv("MYSQL_HOST"),
+		os.Getenv("MYSQL_PORT"),
+		os.Getenv("MYSQL_DB"),
 	)
 
 	db, err = sql.Open("mysql", dsn)
@@ -147,8 +157,10 @@ func main() {
 			return createNodeHandler(ctx, request)
 		case request.HTTPMethod == http.MethodGet && request.Path == "/nodes":
 			return getNodesHandler(ctx, request)
+		case request.HTTPMethod == http.MethodGet && request.Path == "/health":
+			return healthHandler(ctx, request)
 		default:
-			return events.APIGatewayProxyResponse{StatusCode: http.StatusNotFound, Body: "Not found"}, nil
+			return events.APIGatewayProxyResponse{StatusCode: http.StatusNotFound, Body: "Not found!"}, nil
 		}
 	})
 }

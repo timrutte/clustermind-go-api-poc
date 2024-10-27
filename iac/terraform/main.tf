@@ -7,32 +7,27 @@ locals {
   app_name = "clustermind"
 }
 
-# Erstellen einer neuen VPC
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true # DNS-Unterstützung aktivieren
-  enable_dns_hostnames = true # DNS-Hostnamen aktivieren
+  enable_dns_support   = true
+  enable_dns_hostnames = true
   tags = {
     Name = "${local.app_name}-vpc"
   }
 }
 
-# Erstellen eines Internet Gateways
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
-
   tags = {
     Name = "${local.app_name}-igw"
   }
 }
 
-# Erstellen von Subnetzen
 resource "aws_subnet" "subnet1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = "eu-west-1a" # Verfügbarkeitszone in eu-west-1
+  availability_zone       = "eu-west-1a"
   map_public_ip_on_launch = true
-
   tags = {
     Name = "${local.app_name}-subnet1"
   }
@@ -41,29 +36,24 @@ resource "aws_subnet" "subnet1" {
 resource "aws_subnet" "subnet2" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.2.0/24"
-  availability_zone       = "eu-west-1b" # Verfügbarkeitszone in eu-west-1
+  availability_zone       = "eu-west-1b"
   map_public_ip_on_launch = true
-
   tags = {
     Name = "${local.app_name}-subnet2"
   }
 }
 
-# Erstellen einer Routing-Tabelle
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
-
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.gw.id
   }
-
   tags = {
     Name = "${local.app_name}-public-rt"
   }
 }
 
-# Zuordnen der Routing-Tabelle zu den Subnetzen
 resource "aws_route_table_association" "subnet1_assoc" {
   subnet_id      = aws_subnet.subnet1.id
   route_table_id = aws_route_table.public.id
@@ -76,22 +66,15 @@ resource "aws_route_table_association" "subnet2_assoc" {
 
 resource "null_resource" "build_go" {
   provisioner "local-exec" {
-    command = "GOOS=linux GOARCH=amd64 go build -o ../../build/clustermind ../../main.go"
+    command = <<EOT
+      GOOS=linux GOARCH=amd64 go build -o ../../build/clustermind ../../main.go
+      cd ../../build && zip clustermind.zip clustermind
+    EOT
   }
-
   triggers = {
     go_file = filemd5("../../main.go")
   }
 }
-
-data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_file = "../../build/clustermind"
-  output_path = "../../build/clustermind.zip"
-
-  depends_on = [null_resource.build_go]
-}
-
 
 resource "aws_iam_role" "lambda_role" {
   name = "${local.app_name}-lambda-role"
@@ -110,17 +93,56 @@ resource "aws_iam_role" "lambda_role" {
 
 resource "aws_iam_policy_attachment" "lambda_logging" {
   name       = "${local.app_name}-lambda-logging"
-  roles      = [aws_iam_role.lambda_role.name]                                    # Verweist auf die erstellte Rolle
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" # Standard-Richtlinie für Lambda-Logging
+  roles      = [aws_iam_role.lambda_role.name]
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "lambda_ec2_permissions" {
+  name   = "${local.app_name}-lambda-ec2-permissions"
+  role   = aws_iam_role.lambda_role.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_cloudwatch_policy" {
+  name   = "lambda_cloudwatch_policy"
+  role   = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 resource "random_password" "db_password" {
-  length  = 16   # Länge des Passworts
-  special = true # Ob spezielle Zeichen erlaubt sind
+  length  = 16
+  special = true
 }
 
 resource "aws_secretsmanager_secret" "db_secret" {
-  name = "${local.app_name}-db-password" # Der Name des Secrets
+  name = "${local.app_name}-db-password"
 }
 
 resource "aws_secretsmanager_secret_version" "db_secret_version" {
@@ -130,16 +152,13 @@ resource "aws_secretsmanager_secret_version" "db_secret_version" {
   })
 }
 
-# Sicherheitsgruppe für Lambda und RDS erstellen
 resource "aws_security_group" "lambda_rds_sg" {
   vpc_id = aws_vpc.main.id
-
   tags = {
     Name = "lambda-rds-sg"
   }
 }
 
-# Erstellen der RDS MySQL-Datenbank
 resource "aws_db_instance" "default" {
   allocated_storage      = 20
   engine                 = "mysql"
@@ -155,18 +174,15 @@ resource "aws_db_instance" "default" {
   identifier             = "${local.app_name}-db"
 }
 
-# Sicherheitsgruppe für die RDS-Datenbank
 resource "aws_security_group" "default" {
   name        = "${local.app_name}-rds-sg"
   description = "Allow access to the RDS MySQL instance"
-
   ingress {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Nur zu Testzwecken; für Produktion sicherer machen!
+    cidr_blocks = ["0.0.0.0/0"]
   }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -175,34 +191,28 @@ resource "aws_security_group" "default" {
   }
 }
 
-# Erstellen einer Subnetzgruppe für die RDS-Datenbank
 resource "aws_db_subnet_group" "default" {
   name       = "${local.app_name}-db-subnet-group"
   subnet_ids = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
-
   tags = {
     Name = "${local.app_name}-db-subnet-group"
   }
 }
 
-# Subnet-Gruppe für RDS
 resource "aws_db_subnet_group" "main" {
   name       = "${local.app_name}-db-subnet-group"
   subnet_ids = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
-
   tags = {
     Name = "db-subnet-group"
   }
 }
 
 resource "aws_lambda_function" "go_api_lambda" {
-  filename      = data.archive_file.lambda_zip.output_path
+  filename      = "../../build/clustermind.zip"
   function_name = "${local.app_name}-go-api"
   role          = aws_iam_role.lambda_role.arn
-  handler       = "bootstrap"
+  handler       = "clustermind"
   runtime       = "provided.al2"
-
-
   vpc_config {
     security_group_ids = [aws_security_group.lambda_rds_sg.id]
     subnet_ids         = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]

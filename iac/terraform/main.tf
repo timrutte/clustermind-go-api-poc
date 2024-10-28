@@ -12,6 +12,13 @@ terraform {
   }
 
   required_version = ">= 1.3.7"
+
+  backend "s3" {
+    bucket = "clustermind-terraform-backend"
+    key    = "terraform.tfstate"
+    region = "eu-west-1"
+    profile = "clustermind"
+  }
 }
 
 provider "aws" {

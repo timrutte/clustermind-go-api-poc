@@ -152,7 +152,6 @@ func main() {
 	InitDB()
 	defer db.Close()
 
-	// Mapping HTTP methods and paths to handler functions
 	lambda.Start(func(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 		switch {
 		case request.HTTPMethod == http.MethodPost && request.Path == "/nodes":

@@ -7,3 +7,7 @@ variable "aws_profile" {
   description = "AWS profile"
   default     = "default"
 }
+
+variable "cost_alert_email" {
+  description = "Email address to send cost alerts to"
+}

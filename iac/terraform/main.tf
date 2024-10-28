@@ -14,9 +14,9 @@ terraform {
   required_version = ">= 1.3.7"
 
   backend "s3" {
-    bucket = "clustermind-terraform-backend"
-    key    = "terraform.tfstate"
-    region = "eu-west-1"
+    bucket  = "clustermind-terraform-backend"
+    key     = "terraform.tfstate"
+    region  = "eu-west-1"
     profile = "clustermind"
   }
 }
@@ -333,4 +333,30 @@ resource "aws_lambda_permission" "apigw_lambda" {
   function_name = aws_lambda_function.go_api_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.go_api.execution_arn}/*/*"
+}
+
+resource "aws_sns_topic" "cost_alert" {
+  name = "${local.app_name}-cost-alert-topic"
+}
+
+resource "aws_sns_topic_subscription" "email_subscription" {
+  topic_arn = aws_sns_topic.cost_alert.arn
+  protocol  = "email"
+  endpoint  = var.cost_alert_email
+}
+
+resource "aws_budgets_budget" "monthly_cost_budget" {
+  name         = "Monthly Cost Budget"
+  budget_type  = "COST"
+  time_unit    = "MONTHLY"
+  limit_amount = "1"
+  limit_unit   = "USD"
+
+  notification {
+    notification_type         = "ACTUAL"
+    comparison_operator       = "GREATER_THAN"
+    threshold                 = 1
+    threshold_type            = "PERCENTAGE"
+    subscriber_sns_topic_arns = [aws_sns_topic.cost_alert.arn]
+  }
 }

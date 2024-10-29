@@ -345,6 +345,25 @@ resource "aws_sns_topic_subscription" "email_subscription" {
   endpoint  = var.cost_alert_email
 }
 
+resource "aws_sns_topic_policy" "cost_alert_policy" {
+  arn    = aws_sns_topic.cost_alert.arn
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "budgets.amazonaws.com"
+      },
+      "Action": "sns:Publish",
+      "Resource": "${aws_sns_topic.cost_alert.arn}"
+    }
+  ]
+}
+EOF
+}
+
 resource "aws_budgets_budget" "monthly_cost_budget" {
   name         = "Monthly Cost Budget"
   budget_type  = "COST"
